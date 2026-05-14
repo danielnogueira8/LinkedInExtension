@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "LinkedIn Activity Sorter",
+  "version": "0.1.0",
+  "description": "Sort a LinkedIn profile's activity feed by likes, comments, reposts, or recency. Personal use only. No data leaves your browser.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": ["storage"],
+  "host_permissions": ["https://www.linkedin.com/*"],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.linkedin.com/in/*/recent-activity/*",
+        "https://www.linkedin.com/in/*/recent-activity*"
+      ],
+      "js": ["src/content.js"],
+      "css": ["src/styles.css"],
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["src/interceptor.js"],
+      "matches": ["https://www.linkedin.com/*"]
+    }
+  ],
+  "action": {
+    "default_title": "LinkedIn Activity Sorter",
+    "default_popup": "src/popup.html"
+  }
+}

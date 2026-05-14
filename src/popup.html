@@ -1,0 +1,60 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>LinkedIn Activity Sorter</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      width: 320px;
+      margin: 0;
+      padding: 14px;
+      color: #1d2226;
+      background: #fff;
+      font-size: 13px;
+    }
+    h1 { font-size: 15px; margin: 0 0 4px; }
+    p { margin: 0 0 10px; opacity: 0.85; }
+    label { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; font-size: 12px; }
+    input[type="number"] {
+      padding: 5px 8px; border: 1px solid #d0d7de; border-radius: 6px; font-size: 13px;
+    }
+    button {
+      padding: 6px 10px; border: 1px solid #0a66c2; background: #0a66c2; color: #fff;
+      border-radius: 6px; cursor: pointer; font-size: 12px;
+    }
+    .row { display: flex; gap: 8px; align-items: center; }
+    #saved { font-size: 11px; opacity: 0.7; margin-left: 6px; }
+    .note { font-size: 11px; opacity: 0.7; margin-top: 12px; line-height: 1.4; }
+  </style>
+</head>
+<body>
+  <h1>Activity Sorter</h1>
+  <p>Open a LinkedIn profile's <em>recent activity</em> page. The sort panel appears on the right.</p>
+
+  <label>
+    Posts per "Load more" click
+    <input id="batchSize" type="number" min="5" max="200" />
+  </label>
+  <label>
+    Delay between scroll triggers (ms)
+    <input id="scrollDelayMs" type="number" min="500" max="10000" step="100" />
+  </label>
+  <label>
+    Max scroll steps per click (safety cap)
+    <input id="maxStepsPerLoad" type="number" min="1" max="100" />
+  </label>
+
+  <div class="row">
+    <button id="save">Save</button>
+    <span id="saved"></span>
+  </div>
+
+  <p class="note">
+    For personal use. No data leaves your browser. Be respectful — keep delays high
+    and don't bulk-scrape. Comply with LinkedIn's Terms of Service.
+  </p>
+
+  <script src="popup.js"></script>
+</body>
+</html>
