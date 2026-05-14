@@ -33,8 +33,21 @@
     return TARGET_URL_HINTS.some((h) => url.includes(h));
   }
 
+  // Debug ring buffer accessible from the page console as window.__lias.
+  const debugBuffer = [];
+  let totalSeen = 0;
+  window.__lias = window.__lias || {
+    get last() { return debugBuffer[debugBuffer.length - 1]; },
+    get all() { return debugBuffer.slice(); },
+    get totalSeen() { return totalSeen; },
+  };
+
   function emit(payload) {
+    totalSeen++;
+    debugBuffer.push(payload);
+    if (debugBuffer.length > 20) debugBuffer.shift();
     try {
+      console.log("[LI Activity Sorter] captured", payload.url);
       window.postMessage(
         { source: "linkedin-activity-sorter", kind: "voyager-response", payload },
         window.location.origin

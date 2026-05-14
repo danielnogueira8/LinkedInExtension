@@ -15,19 +15,8 @@
   const LOG_PREFIX = "[LI Activity Sorter]";
   const log = (...a) => console.log(LOG_PREFIX, ...a);
 
-  // ---------- Inject the page-context interceptor ----------
-  function injectInterceptor() {
-    try {
-      const s = document.createElement("script");
-      s.src = chrome.runtime.getURL("src/interceptor.js");
-      s.async = false;
-      (document.head || document.documentElement).appendChild(s);
-      s.onload = () => s.remove();
-    } catch (e) {
-      console.warn(LOG_PREFIX, "interceptor inject failed", e);
-    }
-  }
-  injectInterceptor();
+  // The interceptor runs in the MAIN world via a separate content_script
+  // entry in the manifest, so we don't need to inject anything here.
 
   // ---------- State ----------
   /** @type {Map<string, Post>} */
