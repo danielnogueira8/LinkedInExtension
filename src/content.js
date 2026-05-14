@@ -213,6 +213,185 @@
     return added;
   }
 
+  // ---------- DOM scraping (primary, reliable path) ----------
+  // We read posts directly from LinkedIn's rendered DOM. Each activity card
+  // carries a urn:li:activity URN as data-urn or in inner attributes, plus
+  // engagement counts in the social-counts row. This works regardless of
+  // which Voyager endpoint LinkedIn used.
+
+  const POST_CARD_SELECTORS = [
+    'div[data-urn^="urn:li:activity:"]',
+    'div[data-id^="urn:li:activity:"]',
+    'div.feed-shared-update-v2',
+    'div.profile-creator-shared-feed-update__container',
+  ];
+
+  function findPostCards() {
+    const seen = new Set();
+    const out = [];
+    for (const sel of POST_CARD_SELECTORS) {
+      document.querySelectorAll(sel).forEach((el) => {
+        if (seen.has(el)) return;
+        seen.add(el);
+        out.push(el);
+      });
+    }
+    return out;
+  }
+
+  function extractUrnFromCard(card) {
+    // direct attributes
+    for (const attr of ["data-urn", "data-id"]) {
+      const v = card.getAttribute(attr);
+      if (v && v.startsWith("urn:li:activity:")) return v;
+    }
+    // search descendants
+    const withUrn = card.querySelector('[data-urn^="urn:li:activity:"], [data-id^="urn:li:activity:"]');
+    if (withUrn) {
+      return withUrn.getAttribute("data-urn") || withUrn.getAttribute("data-id");
+    }
+    // search innerHTML for the URN string as last resort
+    const m = /urn:li:activity:(\d+)/.exec(card.innerHTML);
+    if (m) return `urn:li:activity:${m[1]}`;
+    return null;
+  }
+
+  function parseCount(text) {
+    if (!text) return 0;
+    const t = String(text).trim().replace(/,/g, "");
+    // "1,234" "12K" "1.2K" "3M"
+    const m = /^([\d.]+)\s*([KMB]?)/i.exec(t);
+    if (!m) return 0;
+    const n = parseFloat(m[1]);
+    const mult = { K: 1e3, M: 1e6, B: 1e9 }[m[2].toUpperCase()] || 1;
+    return Math.round(n * mult);
+  }
+
+  function extractCountsFromCard(card) {
+    // LinkedIn's social-counts row contains likes / comments / reposts.
+    // Class names change; we use a few patterns + aria-labels.
+    let likes = 0, comments = 0, reposts = 0;
+
+    // Likes: aria-label like "1,234 reactions"
+    const likeEl = card.querySelector(
+      'button[aria-label*="reaction" i], span.social-details-social-counts__reactions-count, [data-test-id="social-actions-reactions"]'
+    );
+    if (likeEl) {
+      const label = likeEl.getAttribute("aria-label") || likeEl.textContent;
+      likes = parseCount(label);
+    }
+
+    // Comments: button or link with "comments"
+    const commentEls = card.querySelectorAll(
+      'li.social-details-social-counts__comments button, button[aria-label*="comment" i], a[aria-label*="comment" i], [data-test-id="social-actions-comments"]'
+    );
+    for (const el of commentEls) {
+      const label = el.getAttribute("aria-label") || el.textContent;
+      const n = parseCount(label);
+      if (n > comments) comments = n;
+    }
+
+    // Reposts
+    const repostEls = card.querySelectorAll(
+      'button[aria-label*="repost" i], button[aria-label*="reshare" i], a[aria-label*="repost" i]'
+    );
+    for (const el of repostEls) {
+      const label = el.getAttribute("aria-label") || el.textContent;
+      const n = parseCount(label);
+      if (n > reposts) reposts = n;
+    }
+
+    return { likes, comments, reposts };
+  }
+
+  function extractTextFromCard(card) {
+    const el = card.querySelector(
+      '.feed-shared-update-v2__description, .update-components-text, [class*="update-components-text"], [data-test-id="main-feed-activity-card-commentary"]'
+    );
+    if (el) return el.innerText.trim();
+    // fallback: first long-ish text node
+    const ps = card.querySelectorAll("span, p");
+    for (const p of ps) {
+      const t = p.innerText && p.innerText.trim();
+      if (t && t.length > 30) return t;
+    }
+    return "";
+  }
+
+  function extractRelativeDateFromCard(card) {
+    // LinkedIn shows things like "2d • Edited •" or "3w •". We try to find it.
+    const el = card.querySelector(
+      '.update-components-actor__sub-description, .feed-shared-actor__sub-description, [class*="actor__sub-description"]'
+    );
+    if (!el) return { rel: "", ts: 0 };
+    const text = el.innerText || "";
+    return { rel: text.trim(), ts: relativeToTs(text) };
+  }
+
+  function relativeToTs(text) {
+    // Parses things like "2h", "3d", "1w", "2mo", "1yr". Returns approx epoch ms.
+    const m = /(\d+)\s*(s|sec|min|m|h|hr|d|day|w|wk|mo|month|y|yr|year)/i.exec(text);
+    if (!m) return 0;
+    const n = parseInt(m[1], 10);
+    const unit = m[2].toLowerCase();
+    const sec = 1000;
+    const map = {
+      s: sec, sec: sec,
+      min: 60 * sec, m: 60 * sec,
+      h: 3600 * sec, hr: 3600 * sec,
+      d: 86400 * sec, day: 86400 * sec,
+      w: 7 * 86400 * sec, wk: 7 * 86400 * sec,
+      mo: 30 * 86400 * sec, month: 30 * 86400 * sec,
+      y: 365 * 86400 * sec, yr: 365 * 86400 * sec, year: 365 * 86400 * sec,
+    };
+    const ms = map[unit] * n;
+    return ms ? Date.now() - ms : 0;
+  }
+
+  function scrapeDOM() {
+    const cards = findPostCards();
+    let added = 0, updated = 0;
+    for (const card of cards) {
+      const urn = extractUrnFromCard(card);
+      if (!urn) continue;
+      const counts = extractCountsFromCard(card);
+      const text = extractTextFromCard(card);
+      const date = extractRelativeDateFromCard(card);
+      const existing = posts.get(urn);
+      const merged = {
+        urn,
+        permalink: permalinkFromUrn(urn),
+        text: text || (existing && existing.text) || "",
+        likes: Math.max(counts.likes, existing ? existing.likes : 0),
+        comments: Math.max(counts.comments, existing ? existing.comments : 0),
+        reposts: Math.max(counts.reposts, existing ? existing.reposts : 0),
+        publishedAt: existing && existing.publishedAt ? existing.publishedAt : date.ts,
+        authorName: existing ? existing.authorName : "",
+        mediaThumb: existing ? existing.mediaThumb : null,
+      };
+      if (existing) updated++;
+      else added++;
+      posts.set(urn, merged);
+    }
+    if (added || updated) {
+      log(`DOM scrape: +${added} new, ~${updated} updated, total ${posts.size}`);
+      renderList();
+    }
+    return added + updated;
+  }
+
+  // Watch the page: any time DOM changes, re-scrape.
+  const domObserver = new MutationObserver(() => {
+    // Debounce — LinkedIn mutates a LOT
+    if (domObserver._t) clearTimeout(domObserver._t);
+    domObserver._t = setTimeout(() => scrapeDOM(), 250);
+  });
+  function startDOMObserver() {
+    try {
+      domObserver.observe(document.body, { childList: true, subtree: true });
+    } catch (_) {}
+  }
+
   // ---------- Message bridge from interceptor ----------
   // Debug ring buffer — last 10 raw payloads, exposed as window.__lias for
   // troubleshooting parser misses. No data is exfiltrated.
@@ -484,6 +663,13 @@
   function boot() {
     ensurePanel();
     renderList();
+    if (isActivityPage()) {
+      // First scrape immediately, then watch for new cards as user scrolls.
+      setTimeout(scrapeDOM, 500);
+      setTimeout(scrapeDOM, 1500);
+      setTimeout(scrapeDOM, 3000);
+      startDOMObserver();
+    }
   }
 
   if (document.readyState === "loading") {
@@ -491,6 +677,15 @@
   } else {
     boot();
   }
+
+  // Debug handle for the isolated world
+  try {
+    window.__liasContent = {
+      scrape: scrapeDOM,
+      posts: () => Array.from(posts.values()),
+      reset: () => { posts.clear(); renderList(); },
+    };
+  } catch {}
 
   // SPA navigations: LinkedIn swaps the body without full reload. Re-mount the
   // panel and reset state when the profile changes.
