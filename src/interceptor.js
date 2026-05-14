@@ -7,6 +7,9 @@
   if (window.__linkedInActivitySorterInstalled) return;
   window.__linkedInActivitySorterInstalled = true;
 
+  // Hints we look for in voyager URLs. We cast a wide net because LinkedIn
+  // moves endpoints around (REST → GraphQL), and we'd rather over-collect
+  // and let the parser filter than miss responses entirely.
   const TARGET_URL_HINTS = [
     "profileUpdates",
     "memberShares",
@@ -14,11 +17,19 @@
     "feedDashProfileUpdates",
     "creatorDashFollowingFeed",
     "voyagerIdentityDashProfileUpdates",
+    "feedDashMainFeed",
+    "feedDashUpdates",
+    "graphql",
+    "ProfileUpdates",
+    "MainFeed",
   ];
 
   function urlIsInteresting(url) {
     if (typeof url !== "string") return false;
+    // voyager REST OR voyager GraphQL endpoint
     if (!url.includes("/voyager/")) return false;
+    // GraphQL endpoint contains "/voyager/api/graphql" — always inspect
+    if (url.includes("/graphql")) return true;
     return TARGET_URL_HINTS.some((h) => url.includes(h));
   }
 

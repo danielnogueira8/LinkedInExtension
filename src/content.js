@@ -13,7 +13,7 @@
 
 (function () {
   const LOG_PREFIX = "[LI Activity Sorter]";
-  const log = (...a) => console.debug(LOG_PREFIX, ...a);
+  const log = (...a) => console.log(LOG_PREFIX, ...a);
 
   // ---------- Inject the page-context interceptor ----------
   function injectInterceptor() {
@@ -225,22 +225,51 @@
   }
 
   // ---------- Message bridge from interceptor ----------
+  // Debug ring buffer — last 10 raw payloads, exposed as window.__lias for
+  // troubleshooting parser misses. No data is exfiltrated.
+  const debugBuffer = [];
+  let totalSeen = 0;
+
   window.addEventListener("message", (ev) => {
     if (ev.source !== window) return;
     const data = ev.data;
     if (!data || data.source !== "linkedin-activity-sorter") return;
     if (data.kind === "voyager-response") {
+      totalSeen++;
+      const url = data.payload && data.payload.url;
+      const json = data.payload && data.payload.json;
+      debugBuffer.push({ url, json });
+      if (debugBuffer.length > 10) debugBuffer.shift();
       try {
-        const added = walkAndIngest(data.payload && data.payload.json);
-        if (added > 0) {
-          log(`ingested ${added} posts (total ${posts.size})`);
-          renderList();
-        }
+        const added = walkAndIngest(json);
+        log(`response ${totalSeen} (${shortenUrl(url)}) → +${added} posts (total ${posts.size})`);
+        if (added > 0) renderList();
       } catch (e) {
         console.warn(LOG_PREFIX, "ingest error", e);
       }
     }
   });
+
+  function shortenUrl(u) {
+    if (!u) return "?";
+    try {
+      const p = new URL(u);
+      return p.pathname + (p.search ? "?…" : "");
+    } catch {
+      return String(u).slice(0, 80);
+    }
+  }
+
+  // Expose a debug handle so you can inspect captured payloads from console.
+  // Usage: __lias.last  /  __lias.all  /  __lias.posts
+  try {
+    window.__lias = {
+      get last() { return debugBuffer[debugBuffer.length - 1]; },
+      get all() { return debugBuffer.slice(); },
+      get posts() { return Array.from(posts.values()); },
+      get totalSeen() { return totalSeen; },
+    };
+  } catch {}
 
   // ---------- UI ----------
   function isActivityPage() {
