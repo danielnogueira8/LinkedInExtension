@@ -400,8 +400,8 @@
   }
 
   // ---------- Pacing for load more ----------
-  // We trigger LinkedIn's own infinite-scroll by scrolling the window. We pace
-  // it gently to avoid behaving like a scraper.
+  // LinkedIn lazy-loads either via window scroll OR an inner scroll container,
+  // and sometimes via a "Show more results" button. We try all three, paced.
   async function loadMore() {
     if (loadingMore) return;
     loadingMore = true;
@@ -409,16 +409,15 @@
     btn.disabled = true;
     const startCount = posts.size;
     const cfg = await getConfig();
-    const targetExtra = cfg.batchSize; // how many *new* posts we want this click
+    const targetExtra = cfg.batchSize;
     const stepMs = cfg.scrollDelayMs;
     const maxSteps = cfg.maxStepsPerLoad;
 
-    // Find a scroll container that actually scrolls (LinkedIn sometimes uses inner)
     for (let i = 0; i < maxSteps; i++) {
       const before = posts.size;
-      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "instant" });
+      triggerScroll();
+      clickShowMoreIfPresent();
       await sleep(stepMs);
-      // If nothing new arrived in two cycles, stop early.
       if (posts.size === before) {
         await sleep(stepMs);
         if (posts.size === before) break;
@@ -427,6 +426,37 @@
     }
     btn.disabled = false;
     loadingMore = false;
+  }
+
+  function triggerScroll() {
+    // Window
+    window.scrollTo(0, document.documentElement.scrollHeight);
+    // Any inner scrollable container (LinkedIn sometimes uses .scaffold-finite-scroll)
+    const candidates = document.querySelectorAll(
+      'main, [data-finite-scroll], .scaffold-finite-scroll, [class*="scaffold"]'
+    );
+    candidates.forEach((el) => {
+      if (el.scrollHeight > el.clientHeight + 50) {
+        el.scrollTop = el.scrollHeight;
+      }
+    });
+    // Fire a synthetic scroll event some lazy loaders listen for
+    window.dispatchEvent(new Event("scroll"));
+  }
+
+  function clickShowMoreIfPresent() {
+    // LinkedIn uses a "Show more results" button at the bottom of activity feeds
+    const buttons = document.querySelectorAll(
+      'button.scaffold-finite-scroll__load-button, button[aria-label*="Show more"], button[aria-label*="show more"]'
+    );
+    for (const b of buttons) {
+      const rect = b.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0 && !b.disabled) {
+        b.click();
+        return true;
+      }
+    }
+    return false;
   }
 
   function sleep(ms) {
