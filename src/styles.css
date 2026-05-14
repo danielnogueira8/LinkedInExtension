@@ -173,6 +173,30 @@ html.lias-hide-native main {
   transition: opacity 0.2s;
 }
 
+.lias-empty {
+  padding: 16px 12px;
+  text-align: center;
+  font-size: 12px;
+  opacity: 0.7;
+  list-style: none;
+}
+
+.lias-cta {
+  display: block;
+  text-align: center;
+  background: #0a66c2;
+  color: #fff !important;
+  text-decoration: none;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.lias-cta:hover {
+  background: #084e96;
+}
+
 /* Small screens — collapse panel to bottom sheet */
 @media (max-width: 1100px) {
   #lias-panel {

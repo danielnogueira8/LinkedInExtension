@@ -243,10 +243,42 @@
   });
 
   // ---------- UI ----------
+  function isActivityPage() {
+    return /\/in\/[^/]+\/recent-activity/.test(location.pathname);
+  }
+
+  function profileActivityUrl() {
+    const m = /\/in\/([^/]+)/.exec(location.pathname);
+    if (!m) return null;
+    return `https://www.linkedin.com/in/${m[1]}/recent-activity/all/`;
+  }
+
   function ensurePanel() {
     if (panelEl && document.body.contains(panelEl)) return;
     panelEl = document.createElement("div");
     panelEl.id = "lias-panel";
+
+    if (!isActivityPage()) {
+      // Promo / deep-link panel on the main profile.
+      const url = profileActivityUrl();
+      panelEl.innerHTML = `
+        <div class="lias-header">
+          <div class="lias-title">Activity Sorter</div>
+          <div class="lias-foot" style="border:none;text-align:left;padding:6px 0 0;">
+            Sort this profile's posts by likes, comments, reposts, or date.
+          </div>
+        </div>
+        <div style="padding:12px;">
+          <a id="lias-go" class="lias-cta" href="${url || "#"}">Open recent activity →</a>
+        </div>
+        <div class="lias-foot">
+          Personal use only. Data stays in your browser.
+        </div>
+      `;
+      document.body.appendChild(panelEl);
+      return;
+    }
+
     panelEl.innerHTML = `
       <div class="lias-header">
         <div class="lias-title">Activity Sorter</div>
@@ -262,7 +294,9 @@
           <span id="lias-status" class="lias-status">0 posts seen</span>
         </div>
       </div>
-      <ol id="lias-list" class="lias-list"></ol>
+      <ol id="lias-list" class="lias-list">
+        <li class="lias-empty">Scroll the page once or click <b>Load more</b> to fetch posts.</li>
+      </ol>
       <div class="lias-foot">
         Personal use only. Data stays in your browser. Respect LinkedIn's Terms of Service.
       </div>
@@ -316,9 +350,13 @@
 
   function renderList() {
     ensurePanel();
-    if (!listEl) return;
+    if (!listEl) return; // not on activity page
     const arr = sortedPosts();
-    statusEl.textContent = `${arr.length} post${arr.length === 1 ? "" : "s"} seen`;
+    if (statusEl) statusEl.textContent = `${arr.length} post${arr.length === 1 ? "" : "s"} seen`;
+    if (arr.length === 0) {
+      listEl.innerHTML = `<li class="lias-empty">Scroll the page once or click <b>Load more</b> to fetch posts.</li>`;
+      return;
+    }
     const frag = document.createDocumentFragment();
     for (const p of arr) {
       const li = document.createElement("li");
@@ -415,8 +453,7 @@
       posts.clear();
       if (panelEl) panelEl.remove();
       panelEl = null;
-      // Only mount on activity pages
-      if (/\/in\/[^/]+\/recent-activity/.test(location.pathname)) {
+      if (/\/in\/[^/]+/.test(location.pathname)) {
         boot();
       }
     } else if (panelEl && !document.body.contains(panelEl)) {
